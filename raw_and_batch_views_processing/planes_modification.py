@@ -52,7 +52,7 @@ def transform_aircraft_data(df):
     # TailNum: prepend 'N' to N_NUMBER
     df = df.withColumn(
         "TailNum",
-        concat(lit("N"), col("N_NUMBER"))
+        concat(lit("N"), col("N-NUMBER"))
     )
 
     # ManufacturerName: direct mapping with trimming
@@ -68,20 +68,20 @@ def transform_aircraft_data(df):
     )
 
     # AircraftTypeName: code lookup
-    aircraft_type_mapping = when(col("TYPE_AIRCRAFT").isNull(), lit(None))
+    aircraft_type_mapping = when(col("TYPE AIRCRAFT").isNull(), lit(None))
     for code, name in AIRCRAFT_TYPE_CODES.items():
         aircraft_type_mapping = aircraft_type_mapping.when(
-            col("TYPE_AIRCRAFT") == code, lit(name)
+            col("TYPE AIRCRAFT") == code, lit(name)
         )
     aircraft_type_mapping = aircraft_type_mapping.otherwise(lit(None))
 
     df = df.withColumn("AircraftTypeName", aircraft_type_mapping)
 
     # EngineTypeName: code lookup
-    engine_type_mapping = when(col("TYPE_ENGINE").isNull(), lit(None))
+    engine_type_mapping = when(col("TYPE ENGINE").isNull(), lit(None))
     for code, name in ENGINE_TYPE_CODES.items():
         engine_type_mapping = engine_type_mapping.when(
-            col("TYPE_ENGINE") == code, lit(name)
+            col("TYPE ENGINE") == code, lit(name)
         )
     engine_type_mapping = engine_type_mapping.otherwise(lit(None))
 
@@ -90,7 +90,7 @@ def transform_aircraft_data(df):
     # YearManufactured: type conversion to int
     df = df.withColumn(
         "YearManufactured",
-        col("YEAR_MFR").cast("int")
+        col("YEAR MFR").cast("int")
     )
 
     # Select final columns
@@ -226,7 +226,7 @@ def process_aircraft_data(force_reprocess=False):
 
     # Remove duplicates based on TailNum (N_NUMBER) within bronze data
     print("Removing duplicates in bronze data...")
-    all_data = all_data.dropDuplicates(["N_NUMBER"])
+    all_data = all_data.dropDuplicates(["N-NUMBER"])
 
     total_bronze_records = all_data.count()
     print(f"Total unique aircraft records in bronze: {total_bronze_records}")
