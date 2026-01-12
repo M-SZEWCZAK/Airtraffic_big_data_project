@@ -4,6 +4,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import *
 
+
 # Initialize Spark Session
 spark = SparkSession.builder \
     .appName("AircraftDataSilverLayer") \
