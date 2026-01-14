@@ -3,6 +3,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
+import argparse
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -43,6 +44,32 @@ def project_root() -> Path:
 def main():
     root = project_root()
 
+    parser = argparse.ArgumentParser(
+        description="Run end-to-end pipeline (bronze->silver->batch->hbase->demo)."
+    )
+    parser.add_argument(
+        "--skip-demo",
+        action="store_true",
+        help="Run pipeline without launching the GUI demo."
+    )
+    parser.add_argument(
+        "--skip-etl",
+        action="store_true",
+        help="Skip Spark ETL jobs (run only demo)."
+    )
+    parser.add_argument(
+        "demo_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments passed to demo_hbase_plots.py. Use: -- <demo args>. "
+             "Example: -- --region California --year 2023 --airport_id 12478"
+    )
+
+    args = parser.parse_args()
+
+    demo_args = args.demo_args
+    if demo_args and demo_args[0] == "--":
+        demo_args = demo_args[1:]
+
     spark_submit = which_or_fail("spark-submit")
     python_exe = sys.executable
 
@@ -50,30 +77,32 @@ def main():
     spark_dir = root / "spark"
     serving_dir = root / "serving"
 
-    # --- 1) Bronze -> Silver (Spark jobs)
-    silver_jobs = [
-        raw_dir / "airports_modification.py",
-        raw_dir / "planes_modification.py",
-        raw_dir / "flights_modification.py",
-        raw_dir / "weather_airport_join_modification.py",
-    ]
+    if not args.skip_etl:
 
-    for job in silver_jobs:
-        if not job.exists():
-            raise FileNotFoundError(f"Missing file: {job}")
-        run_cmd([spark_submit, str(job)])
+        # --- 1) Bronze -> Silver (Spark jobs)
+        silver_jobs = [
+            raw_dir / "airports_modification.py",
+            raw_dir / "planes_modification.py",
+            raw_dir / "flights_modification.py",
+            raw_dir / "weather_airport_join_modification.py",
+        ]
 
-    # --- 2) Silver -> Batch views in Hive (Spark job)
-    batch_views_job = spark_dir / "build_batch_views.py"
-    if not batch_views_job.exists():
-        raise FileNotFoundError(f"Missing file: {batch_views_job}")
-    run_cmd([spark_submit, str(batch_views_job)])
+        for job in silver_jobs:
+            if not job.exists():
+                raise FileNotFoundError(f"Missing file: {job}")
+            run_cmd([spark_submit, str(job)])
 
-    # --- 3) Hive serving tables -> HBase (Spark job with HappyBase)
-    load_hbase_job = serving_dir / "load_to_hbase.py"
-    if not load_hbase_job.exists():
-        raise FileNotFoundError(f"Missing file: {load_hbase_job}")
-    run_cmd([spark_submit, str(load_hbase_job)])
+        # --- 2) Silver -> Batch views in Hive (Spark job)
+        batch_views_job = spark_dir / "build_batch_views.py"
+        if not batch_views_job.exists():
+            raise FileNotFoundError(f"Missing file: {batch_views_job}")
+        run_cmd([spark_submit, str(batch_views_job)])
+
+        # --- 3) Hive serving tables -> HBase (Spark job with HappyBase)
+        load_hbase_job = serving_dir / "load_to_hbase.py"
+        if not load_hbase_job.exists():
+            raise FileNotFoundError(f"Missing file: {load_hbase_job}")
+        run_cmd([spark_submit, str(load_hbase_job)])
 
     # --- 4) Demo (Python GUI / plots)
     demo_job = serving_dir / "demo_hbase_plots.py"
