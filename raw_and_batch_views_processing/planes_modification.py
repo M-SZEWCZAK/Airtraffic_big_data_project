@@ -12,7 +12,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # Bronze layer path
-bronze_path = "hdfs://node1/original_data/planes"
+bronze_path = "hdfs:///original_data/planes"
 # Silver layer path
 silver_path = "hdfs:///silver_data/aircraft"
 
@@ -155,22 +155,44 @@ def get_bronze_files(file_pattern):
     bronze_files = []
     pattern = re.compile(file_pattern)
 
+    # for line in result.stdout.split('\n'):
+    #     if '.parquet' in line:
+    #         parts = line.split()
+    #         if len(parts) >= 8:
+    #             # 1. Get the raw path from HDFS output
+    #             raw_path = parts[-1]
+    #
+    #             # 2. STRIP THE URI: Convert 'hdfs://node1/path' to '/path'
+    #             # This prevents the 'Path does not exist' error
+    #             clean_path = urlparse(raw_path).path
+    #
+    #             # 3. Extract filename for regex matching
+    #             file_name = clean_path.split('/')[-1]
+    #
+    #             if pattern.search(file_name):
+    #                 bronze_files.append(clean_path)
+
     for line in result.stdout.split('\n'):
-        if '.parquet' in line:
-            parts = line.split()
-            if len(parts) >= 8:
-                # 1. Get the raw path from HDFS output
-                raw_path = parts[-1]
+        line = line.strip()
+        if not line:
+            continue
+        if not line.endswith(".parquet"):
+            continue
 
-                # 2. STRIP THE URI: Convert 'hdfs://node1/path' to '/path'
-                # This prevents the 'Path does not exist' error
-                clean_path = urlparse(raw_path).path
+        parts = line.split()
+        if len(parts) >= 8:
+            # 1. Get the raw path from HDFS output
+            raw_path = parts[-1]
 
-                # 3. Extract filename for regex matching
-                file_name = clean_path.split('/')[-1]
+            # 2. Strip the URI
+            clean_path = urlparse(raw_path).path if "://" in raw_path else raw_path
 
-                if pattern.search(file_name):
-                    bronze_files.append(clean_path)
+            # 3. Extract filename for regex matching
+            file_name = clean_path.split('/')[-1]
+
+            if pattern.search(file_name):
+                # Return consistently hdfs:///...
+                bronze_files.append("hdfs:///" + clean_path.lstrip("/"))
 
     return bronze_files
 
