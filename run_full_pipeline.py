@@ -109,11 +109,18 @@ def main():
     if not demo_job.exists():
         raise FileNotFoundError(f"Missing file: {demo_job}")
 
+    # old version
     # Pass demo args for random reads
     # e.g. ["--airport-id", "12478", "--year", "2024", "--carrier", "AA"]
-    demo_args: list[str] = []
+    #demo_args: list[str] = []
 
-    run_cmd([python_exe, str(demo_job), *demo_args])
+    if demo_args:
+        print("Forwarding demo args:", " ".join(demo_args))
+    else:
+        print("No demo args provided (demo will use defaults).")
+
+    if not args.skip_demo:
+        run_cmd([python_exe, str(demo_job), *demo_args])
 
     print("\nEnd-to-end pipeline finished successfully.")
 
