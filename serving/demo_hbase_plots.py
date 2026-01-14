@@ -26,6 +26,7 @@ T_DELAY_CARRIER_MONTH = "serving:delay_carrier_month"
 T_TOP10_MONTH = "serving:top10_airports_delay_month"
 T_WEATHER = "serving:delay_weather_region_month"  # optional
 T_WEATHER_CANCEL = "serving:cancel_weather_region_month"  # optional
+T_AIRCRAFT_AGE = "serving:aircraft_age_bucket_carrier_year"
 
 # # Demo parameters
 # AIRPORT_ID = "12478"
@@ -241,6 +242,54 @@ def fetch_weather_heatmap(
     return df.sort_values(["month", "EventType"])
 
 
+def fetch_aircraft_age_bucket(table, year: int, top_carriers: int = 5) -> pd.DataFrame:
+    """
+    Scan HBase rows for a given year:
+      rowkey = YYYY#bucket#carrier
+    returns columns: aircraft_age_bucket, carrier, avg_dep_delay, avg_arr_delay, flights_cnt
+    """
+    prefix = f"{year:04d}#".encode("utf-8")
+
+    rows = []
+    for rk, row in table.scan(row_prefix=prefix):
+        rk_str = rk.decode("utf-8", errors="ignore")
+        parts = rk_str.split("#")
+        if len(parts) != 3:
+            continue
+
+        y_str, bucket, carrier = parts
+        d = decode_row(row)
+
+        rows.append({
+            "year": int(y_str),
+            "aircraft_age_bucket": bucket,
+            "carrier": carrier,
+            "avg_dep_delay": safe_float(d.get("avg_dep_delay")),
+            "avg_arr_delay": safe_float(d.get("avg_arr_delay")),
+            "flights_cnt": safe_int(d.get("flights_cnt")),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    # choose top carriers by volume (optional)
+    if top_carriers is not None and top_carriers > 0:
+        top = (
+            df.groupby("carrier")["flights_cnt"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(top_carriers)
+            .index
+        )
+        df = df[df["carrier"].isin(top)]
+
+    order = ["0-5", "6-10", "11-20", ">20", "unknown"]
+    df["aircraft_age_bucket"] = pd.Categorical(df["aircraft_age_bucket"], categories=order, ordered=True)
+
+    return df.sort_values(["aircraft_age_bucket", "carrier"])
+
+
 # ======================================================
 # DASHBOARD
 # ======================================================
@@ -260,10 +309,10 @@ def show_dashboard(
     df_weather_delay: pd.DataFrame,
     df_weather_cancel: pd.DataFrame,
     region: str,
+    df_age: pd.DataFrame,
 ):
-
-    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 12))
-    ax1, ax2, ax3, ax4, ax5, ax6 = axes.flatten()
+    fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(12, 16))
+    ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8 = axes.flatten()
 
     # 1) Airport delays
     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
@@ -373,6 +422,31 @@ def show_dashboard(
         ax6.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax6.transAxes)
         ax6.set_axis_off()
 
+    # 7) Aircraft age bucket vs avg dep delay (grouped bar)
+    ax7.set_title(f"Aircraft age bucket vs avg dep delay ({year})")
+    if df_age is not None and not df_age.empty:
+        pivot = df_age.pivot_table(
+            index="aircraft_age_bucket",
+            columns="carrier",
+            values="avg_dep_delay",
+            aggfunc="mean"
+        )
+
+        pivot.plot(kind="bar", ax=ax7)
+        ax7.set_xlabel("Aircraft age bucket [years]")
+        ax7.set_ylabel("Avg dep delay [min]")
+        for label in ax7.get_xticklabels():
+            label.set_rotation(0)
+        ax7.grid(True, axis="y")
+        ax7.legend(title="Carrier", fontsize=8)
+    else:
+        ax7.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax7.transAxes)
+        ax7.set_axis_off()
+
+    # 8) empty plot
+    ax8.set_axis_off()
+
+
     fig.suptitle(
         f"HBase Serving Demo | airport={airport_id} carrier={carrier} "
         f"range={year}-{month_from:02d}..{month_to:02d} | top10={top10_year}-{top10_month:02d}",
@@ -456,6 +530,13 @@ def main():
 
     df_weather_delay = pd.DataFrame()
     df_weather_cancel = pd.DataFrame()
+    df_age = pd.DataFrame()
+
+    try:
+        t_age = conn.table(T_AIRCRAFT_AGE)
+        df_age = fetch_aircraft_age_bucket(t_age, year, top_carriers=5)
+    except Exception as e:
+        print(f"[WARN] Aircraft-age chart skipped: {e}")
 
     # delay heatmap (avg_dep_delay)
     try:
@@ -493,6 +574,7 @@ def main():
         df_weather_delay=df_weather_delay,
         df_weather_cancel=df_weather_cancel,
         region=region,
+        df_age=df_age,
     )
 
     print("Done.")

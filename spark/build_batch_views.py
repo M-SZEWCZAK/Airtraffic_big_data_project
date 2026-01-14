@@ -13,6 +13,7 @@ SERVING_DB = "serving"
 FLIGHTS_TABLE = f"{SILVER_DB}.flight_facts"
 AIRPORTS_TABLE = f"{SILVER_DB}.airport_dim"
 WEATHER_TABLE = f"{SILVER_DB}.weather_airport_events"
+AIRCRAFT_TABLE = f"{SILVER_DB}.aircraft_dim"
 
 # flight_facts
 COL_DEP_AIRPORT = "DepartureAirportID"
@@ -27,6 +28,10 @@ COL_MONTH = "month_partition"
 # airport_dim
 AIRPORT_ID_COL = "AirportID"
 AIRPORT_REGION_COL = "AirportStateName"
+
+COL_TAIL = "TailNumber"          # w flights
+AIRCRAFT_TAIL = "TailNum"        # w aircraft_dim
+AIRCRAFT_YEAR = "YearManufactured"
 
 
 # ======================================================
@@ -66,6 +71,7 @@ def normalize_flights_schema(flights):
         F.col(COL_ARR_DELAY).cast("int").alias(COL_ARR_DELAY),
         F.col(COL_YEAR).cast("int").alias(COL_YEAR),
         F.col(COL_MONTH).cast("int").alias(COL_MONTH),
+        F.col(COL_TAIL).cast("string").alias(COL_TAIL),
     )
 
 
@@ -263,6 +269,63 @@ def build_cancel_weather_region_month(spark, flights, airports):
     )
 
 
+def build_aircraft_age_bucket_carrier_year(spark, flights):
+    """
+    Avg delays by aircraft age bucket and carrier (per year_partition).
+
+    aircraft_age = year_partition - aircraft.YearManufactured
+    bucket: 0-5, 6-10, 11-20, >20
+    """
+    if not table_exists(spark, AIRCRAFT_TABLE):
+        print("[WARN] Aircraft table not found -> skipping aircraft age view.")
+        return None
+
+    aircraft = spark.table(AIRCRAFT_TABLE)
+
+    require_columns(aircraft, [AIRCRAFT_TAIL, AIRCRAFT_YEAR], AIRCRAFT_TABLE)
+
+    flights_pre = flights.select(
+        F.col(COL_CARRIER).cast("string").alias("CarrierCode"),
+        F.col(COL_DEP_DELAY).cast("int").alias("DepartureDelay"),
+        F.col(COL_ARR_DELAY).cast("int").alias("ArrivalDelay"),
+        F.col(COL_YEAR).cast("int").alias("flight_year"),
+        F.col(COL_TAIL).cast("string").alias("TailNumber")
+    ).dropna(subset=["CarrierCode", "flight_year", "TailNumber"])
+
+    aircraft_pre = aircraft.select(
+        F.col(AIRCRAFT_TAIL).cast("string").alias("TailNum"),
+        F.col(AIRCRAFT_YEAR).cast("int").alias("YearManufactured")
+    ).dropna(subset=["TailNum", "YearManufactured"])
+
+    joined = flights_pre.join(
+        aircraft_pre,
+        flights_pre["TailNumber"] == aircraft_pre["TailNum"],
+        "inner"
+    )
+
+    age = (F.col("flight_year") - F.col("YearManufactured"))
+
+    bucket = (
+        F.when(age.between(0, 5), F.lit("0-5"))
+         .when(age.between(6, 10), F.lit("6-10"))
+         .when(age.between(11, 20), F.lit("11-20"))
+         .when(age > 20, F.lit(">20"))
+         .otherwise(F.lit("unknown"))
+    )
+
+    out = (
+        joined
+        .withColumn("aircraft_age_bucket", bucket)
+        .groupBy("flight_year", "aircraft_age_bucket", "CarrierCode")
+        .agg(
+            F.avg("DepartureDelay").alias("avg_dep_delay"),
+            F.avg("ArrivalDelay").alias("avg_arr_delay"),
+            F.count(F.lit(1)).alias("flights_cnt")
+        )
+    )
+    return out
+
+
 # ======================================================
 # MAIN
 # ======================================================
@@ -290,7 +353,7 @@ def main():
     # Validate required columns
     require_columns(
         flights,
-        [COL_DEP_AIRPORT, COL_CARRIER, COL_CANCELLED, COL_DEP_DELAY, COL_ARR_DELAY, COL_YEAR, COL_MONTH],
+        [COL_DEP_AIRPORT, COL_CARRIER, COL_CANCELLED, COL_DEP_DELAY, COL_ARR_DELAY, COL_YEAR, COL_MONTH, COL_TAIL],
         FLIGHTS_TABLE
     )
 
@@ -329,6 +392,14 @@ def main():
         save_hive_table(v6, f"{SERVING_DB}.cancel_weather_region_month")
     else:
         print("[INFO] Cancel-weather view not created (no compatible weather table).")
+
+    # 7) Aircraft age bucket vs delays (optional)
+    v6 = build_aircraft_age_bucket_carrier_year(spark, flights)
+    if v6 is not None:
+        save_hive_table(v6, f"{SERVING_DB}.aircraft_age_bucket_carrier_year")
+    else:
+        print("[INFO] Aircraft-age view not created (no aircraft table).")
+
 
     print("[DONE] Batch views created in Hive database 'serving'.")
     spark.stop()

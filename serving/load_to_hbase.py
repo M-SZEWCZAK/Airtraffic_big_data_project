@@ -22,6 +22,7 @@ HBASE_TABLES = {
     "top10_airports_delay_month": "serving:top10_airports_delay_month",
     "delay_weather_region_month": "serving:delay_weather_region_month",
     "cancel_weather_region_month": "serving:cancel_weather_region_month",
+    "aircraft_age_bucket_carrier_year": "serving:aircraft_age_bucket_carrier_year",
 }
 
 COL_YEAR = "year_partition"
@@ -270,6 +271,40 @@ def main():
         print("[OK] Loaded cancel_weather_region_month.")
     else:
         print("[WARN] serving.cancel_weather_region_month not found – skipping cancel-weather load.")
+
+    # --------------------------------------------------
+    # 7) aircraft_age_bucket_carrier_year
+    # --------------------------------------------------
+    tname = "aircraft_age_bucket_carrier_year"
+    hive_tbl = f"{SERVING_DB}.{tname}"
+    if hive_table_exists(spark, SERVING_DB, tname):
+        ensure_table(conn, HBASE_TABLES[tname])
+        table = conn.table(HBASE_TABLES[tname])
+
+        df = (
+            spark.table(hive_tbl)
+            .withColumn(
+                "rowkey",
+                F.concat_ws(
+                    "#",
+                    F.format_string("%04d", F.col("flight_year")),
+                    F.col("aircraft_age_bucket").cast("string"),
+                    F.col("CarrierCode").cast("string"),
+                )
+            )
+        )
+
+        write_df_to_hbase(
+            df, table, "rowkey",
+            [
+                ("avg_dep_delay", "avg_dep_delay"),
+                ("avg_arr_delay", "avg_arr_delay"),
+                ("flights_cnt", "flights_cnt"),
+            ]
+        )
+        print("[OK] Loaded aircraft_age_bucket_carrier_year.")
+    else:
+        print("[WARN] serving.aircraft_age_bucket_carrier_year not found – skipping aircraft-age load.")
 
     print("[DONE] All available serving views loaded into HBase.")
     conn.close()
