@@ -210,6 +210,59 @@ def build_delay_weather_region_month(spark, flights, airports):
     )
 
 
+def build_cancel_weather_region_month(spark, flights, airports):
+    """
+    Cancel rate vs weather event type per region (state) per month.
+
+    cancel_rate = avg(IsCancelledFlag)
+    Row grain: Region, EventType, year_partition, month_partition
+    """
+    if not table_exists(spark, WEATHER_TABLE):
+        print("[WARN] Weather table not found -> skipping cancel-weather view.")
+        return None
+
+    weather = spark.table(WEATHER_TABLE)
+
+    airports_pre = airports.select(
+        F.col(AIRPORT_ID_COL).cast("string").alias("AirportID_str"),
+        F.col(AIRPORT_REGION_COL).alias("Region")
+    )
+
+    flights_region = flights.join(
+        airports_pre,
+        flights[COL_DEP_AIRPORT] == airports_pre["AirportID_str"],
+        "left"
+    )
+
+    weather_pre = (
+        weather.select(
+            F.col("AIRPORT_ID").cast("string").alias("AirportID_str"),
+            F.col("EVENT_TYPE").cast("string").alias("EventType"),
+            F.col(COL_YEAR).cast("int").alias("w_year"),
+            F.col(COL_MONTH).cast("int").alias("w_month")
+        )
+        .dropna(subset=["AirportID_str", "EventType", "w_year", "w_month"])
+        .dropDuplicates(["AirportID_str", "EventType", "w_year", "w_month"])
+    )
+
+    joined = flights_region.join(
+        weather_pre,
+        (flights_region[COL_DEP_AIRPORT] == weather_pre["AirportID_str"]) &
+        (flights_region[COL_YEAR] == weather_pre["w_year"]) &
+        (flights_region[COL_MONTH] == weather_pre["w_month"]),
+        "inner"
+    )
+
+    return (
+        joined
+        .groupBy("Region", "EventType", COL_YEAR, COL_MONTH)
+        .agg(
+            F.avg(F.col(COL_CANCELLED).cast("double")).alias("cancel_rate"),
+            F.count(F.lit(1)).alias("flights_cnt")
+        )
+    )
+
+
 # ======================================================
 # MAIN
 # ======================================================
@@ -255,10 +308,6 @@ def main():
     v2 = build_cancel_airport_month(flights)
     save_hive_table(v2, f"{SERVING_DB}.cancel_airport_month")
 
-    # 5) Avg delay per carrier-month
-    v5 = build_delay_carrier_month(flights)
-    save_hive_table(v5, f"{SERVING_DB}.delay_carrier_month")
-
     # 3) Top10 airports by delay per month
     v3 = build_top10_airports_month(v1)
     save_hive_table(v3, f"{SERVING_DB}.top10_airports_delay_month")
@@ -269,6 +318,17 @@ def main():
         save_hive_table(v4, f"{SERVING_DB}.delay_weather_region_month")
     else:
         print("[INFO] Weather view not created (no compatible weather table).")
+
+    # 5) Avg delay per carrier-month
+    v5 = build_delay_carrier_month(flights)
+    save_hive_table(v5, f"{SERVING_DB}.delay_carrier_month")
+
+    # 6) Cancel rate vs weather event type per region/month (optional)
+    v6 = build_cancel_weather_region_month(spark, flights, airports)
+    if v6 is not None:
+        save_hive_table(v6, f"{SERVING_DB}.cancel_weather_region_month")
+    else:
+        print("[INFO] Cancel-weather view not created (no compatible weather table).")
 
     print("[DONE] Batch views created in Hive database 'serving'.")
     spark.stop()

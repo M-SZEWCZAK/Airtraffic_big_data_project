@@ -25,6 +25,7 @@ T_CANCEL_AIRPORT_MONTH = "serving:cancel_airport_month"
 T_DELAY_CARRIER_MONTH = "serving:delay_carrier_month"
 T_TOP10_MONTH = "serving:top10_airports_delay_month"
 T_WEATHER = "serving:delay_weather_region_month"  # optional
+T_WEATHER_CANCEL = "serving:cancel_weather_region_month"  # optional
 
 # # Demo parameters
 # AIRPORT_ID = "12478"
@@ -186,16 +187,27 @@ def fetch_top10_for_month(table, year: int, month: int) -> pd.DataFrame:
 
     return pd.DataFrame(out)
 
-def fetch_weather_heatmap(table, region: str, year: int, m_from: int, m_to: int) -> pd.DataFrame:
+def fetch_weather_heatmap(
+    table,
+    region: str,
+    year: int,
+    m_from: int,
+    m_to: int,
+    value_col: str = "avg_dep_delay"
+) -> pd.DataFrame:
     """
-    Scan HBase rows for region and build a matrix-like DF:
-    columns: month, EventType, avg_dep_delay, flights_cnt
-    Rowkey format (from load_to_hbase.py):
+    Generic fetcher for weather x region x month heatmaps.
+
+    value_col examples:
+      - 'avg_dep_delay'  (delay heatmap)
+      - 'cancel_rate'    (cancel heatmap)
+
+    Rowkey format:
       Region#EventType#YYYYMM
     """
     prefix = f"{region}#".encode("utf-8")
-
     rows = []
+
     for rk, row in table.scan(row_prefix=prefix):
         rk_str = rk.decode("utf-8", errors="ignore")
         parts = rk_str.split("#", 2)
@@ -218,7 +230,7 @@ def fetch_weather_heatmap(table, region: str, year: int, m_from: int, m_to: int)
             "EventType": event_type,
             "year": y,
             "month": m,
-            "avg_dep_delay": safe_float(d.get("avg_dep_delay")),
+            value_col: safe_float(d.get(value_col)),
             "flights_cnt": safe_int(d.get("flights_cnt")),
         })
 
@@ -245,7 +257,8 @@ def show_dashboard(
     month_to: int,
     top10_year: int,
     top10_month: int,
-    df_weather: pd.DataFrame,
+    df_weather_delay: pd.DataFrame,
+    df_weather_cancel: pd.DataFrame,
     region: str,
 ):
 
@@ -308,8 +321,8 @@ def show_dashboard(
 
     # 5) Weather vs delay (heatmap: month x EventType)
     # Expect df_weather columns: month, EventType, avg_dep_delay
-    if df_weather is not None and not df_weather.empty:
-        pivot = df_weather.pivot_table(
+    if df_weather_delay is not None and not df_weather_delay.empty:
+        pivot = df_weather_delay.pivot_table(
             index="month",
             columns="EventType",
             values="avg_dep_delay",
@@ -333,8 +346,32 @@ def show_dashboard(
         ax5.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax5.transAxes)
         ax5.set_axis_off()
 
-    # 6) keep empty / future extension
-    ax6.set_axis_off()
+    # 6) Weather vs cancel rate (heatmap: month x EventType)
+    # Expect df_weather_cancel columns: month, EventType, cancel_rate
+    if df_weather_cancel is not None and not df_weather_cancel.empty:
+        pivot = df_weather_cancel.pivot_table(
+            index="month",
+            columns="EventType",
+            values="cancel_rate",
+            aggfunc="mean"
+        )
+
+        im = ax6.imshow(pivot.values, aspect="auto")  # default colormap
+        ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
+        ax6.set_xlabel("EventType")
+        ax6.set_ylabel("Month")
+
+        ax6.set_yticks(range(len(pivot.index)))
+        ax6.set_yticklabels(pivot.index.tolist())
+
+        ax6.set_xticks(range(len(pivot.columns)))
+        ax6.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+
+        fig.colorbar(im, ax=ax6, fraction=0.046, pad=0.04, label="Cancel rate")
+    else:
+        ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
+        ax6.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax6.transAxes)
+        ax6.set_axis_off()
 
     fig.suptitle(
         f"HBase Serving Demo | airport={airport_id} carrier={carrier} "
@@ -417,13 +454,26 @@ def main():
     t_top10 = conn.table(T_TOP10_MONTH)
     df_top10 = fetch_top10_for_month(t_top10, top10_year, top10_month)
 
-    df_weather = pd.DataFrame()
-    try:
-        t_weather = conn.table(T_WEATHER)
-        df_weather = fetch_weather_heatmap(t_weather, region, year, month_from, month_to)
-    except Exception as e:
-        print(f"[WARN] Weather chart skipped: {e}")
+    df_weather_delay = pd.DataFrame()
+    df_weather_cancel = pd.DataFrame()
 
+    # delay heatmap (avg_dep_delay)
+    try:
+        t_weather_delay = conn.table(T_WEATHER)  # serving:delay_weather_region_month
+        df_weather_delay = fetch_weather_heatmap(
+            t_weather_delay, region, year, month_from, month_to, value_col="avg_dep_delay"
+        )
+    except Exception as e:
+        print(f"[WARN] Weather delay chart skipped: {e}")
+
+    # cancel heatmap (cancel_rate)
+    try:
+        t_weather_cancel = conn.table(T_WEATHER_CANCEL)  # serving:cancel_weather_region_month
+        df_weather_cancel = fetch_weather_heatmap(
+            t_weather_cancel, region, year, month_from, month_to, value_col="cancel_rate"
+        )
+    except Exception as e:
+        print(f"[WARN] Weather cancel chart skipped: {e}")
 
     conn.close()
 
@@ -440,7 +490,8 @@ def main():
         month_to=month_to,
         top10_year=top10_year,
         top10_month=top10_month,
-        df_weather=df_weather,
+        df_weather_delay=df_weather_delay,
+        df_weather_cancel=df_weather_cancel,
         region=region,
     )
 

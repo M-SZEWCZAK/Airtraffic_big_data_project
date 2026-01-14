@@ -21,6 +21,7 @@ HBASE_TABLES = {
     "delay_carrier_month": "serving:delay_carrier_month",
     "top10_airports_delay_month": "serving:top10_airports_delay_month",
     "delay_weather_region_month": "serving:delay_weather_region_month",
+    "cancel_weather_region_month": "serving:cancel_weather_region_month",
 }
 
 COL_YEAR = "year_partition"
@@ -237,6 +238,38 @@ def main():
         print("[OK] Loaded delay_weather_region_month.")
     else:
         print("[WARN] serving.delay_weather_region_month not found – skipping weather load.")
+
+    # --------------------------------------------------
+    # 6) cancel_weather_region_month (optional)
+    # --------------------------------------------------
+    tname = "cancel_weather_region_month"
+    hive_tbl = f"{SERVING_DB}.{tname}"
+    if hive_table_exists(spark, SERVING_DB, tname):
+        ensure_table(conn, HBASE_TABLES[tname])
+        table = conn.table(HBASE_TABLES[tname])
+
+        df = (
+            spark.table(hive_tbl)
+            .withColumn(
+                "rowkey",
+                F.concat_ws(
+                    "#",
+                    F.col("Region"),
+                    F.col("EventType"),
+                    F.format_string("%04d%02d", F.col(COL_YEAR), F.col(COL_MONTH))
+                )
+            )
+        )
+
+        mappings = [
+            ("cancel_rate", "cancel_rate"),
+            ("flights_cnt", "flights_cnt"),
+        ]
+
+        write_df_to_hbase(df, table, "rowkey", mappings)
+        print("[OK] Loaded cancel_weather_region_month.")
+    else:
+        print("[WARN] serving.cancel_weather_region_month not found – skipping cancel-weather load.")
 
     print("[DONE] All available serving views loaded into HBase.")
     conn.close()
