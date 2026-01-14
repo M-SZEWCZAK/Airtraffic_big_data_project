@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument("--month-to", type=int, default=12)
     parser.add_argument("--top10-month", type=int, default=1)
     parser.add_argument("--top10-year", type=int, default=2025)
+    parser.add_argument("--region", default="California")
 
     return parser.parse_args()
 
@@ -185,6 +186,48 @@ def fetch_top10_for_month(table, year: int, month: int) -> pd.DataFrame:
 
     return pd.DataFrame(out)
 
+def fetch_weather_heatmap(table, region: str, year: int, m_from: int, m_to: int) -> pd.DataFrame:
+    """
+    Scan HBase rows for region and build a matrix-like DF:
+    columns: month, EventType, avg_dep_delay, flights_cnt
+    Rowkey format (from load_to_hbase.py):
+      Region#EventType#YYYYMM
+    """
+    prefix = f"{region}#".encode("utf-8")
+
+    rows = []
+    for rk, row in table.scan(row_prefix=prefix):
+        rk_str = rk.decode("utf-8", errors="ignore")
+        parts = rk_str.split("#", 2)
+        if len(parts) != 3:
+            continue
+
+        _region, event_type, yyyymm = parts
+        try:
+            y = int(yyyymm[:4])
+            m = int(yyyymm[4:6])
+        except:
+            continue
+
+        if y != year or m < m_from or m > m_to:
+            continue
+
+        d = decode_row(row)
+        rows.append({
+            "region": _region,
+            "EventType": event_type,
+            "year": y,
+            "month": m,
+            "avg_dep_delay": safe_float(d.get("avg_dep_delay")),
+            "flights_cnt": safe_int(d.get("flights_cnt")),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    return df.sort_values(["month", "EventType"])
+
 
 # ======================================================
 # DASHBOARD
@@ -202,9 +245,12 @@ def show_dashboard(
     month_to: int,
     top10_year: int,
     top10_month: int,
+    df_weather: pd.DataFrame,
+    region: str,
 ):
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 8))
-    ax1, ax2, ax3, ax4 = axes.flatten()
+
+    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 12))
+    ax1, ax2, ax3, ax4, ax5, ax6 = axes.flatten()
 
     # 1) Airport delays
     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
@@ -259,6 +305,36 @@ def show_dashboard(
         ax4.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
         ax4.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax4.transAxes)
         ax4.set_axis_off()
+
+    # 5) Weather vs delay (heatmap: month x EventType)
+    # Expect df_weather columns: month, EventType, avg_dep_delay
+    if df_weather is not None and not df_weather.empty:
+        pivot = df_weather.pivot_table(
+            index="month",
+            columns="EventType",
+            values="avg_dep_delay",
+            aggfunc="mean"
+        )
+
+        im = ax5.imshow(pivot.values, aspect="auto")  # default colormap
+        ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
+        ax5.set_xlabel("EventType")
+        ax5.set_ylabel("Month")
+
+        ax5.set_yticks(range(len(pivot.index)))
+        ax5.set_yticklabels(pivot.index.tolist())
+
+        ax5.set_xticks(range(len(pivot.columns)))
+        ax5.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+
+        fig.colorbar(im, ax=ax5, fraction=0.046, pad=0.04, label="Delay [min]")
+    else:
+        ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
+        ax5.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax5.transAxes)
+        ax5.set_axis_off()
+
+    # 6) keep empty / future extension
+    ax6.set_axis_off()
 
     fig.suptitle(
         f"HBase Serving Demo | airport={airport_id} carrier={carrier} "
@@ -315,6 +391,7 @@ def show_dashboard(
 def main():
     args = parse_args()
 
+    region = args.region
     airport_id = args.airport_id
     carrier = args.carrier
     year = args.year
@@ -322,6 +399,7 @@ def main():
     month_to = args.month_to
     top10_month = args.top10_month
     top10_year = args.top10_year
+
 
     print(f"Connecting to HBase Thrift at {HBASE_HOST}:{HBASE_PORT} ...")
     conn = happybase.Connection(HBASE_HOST, HBASE_PORT)
@@ -339,6 +417,14 @@ def main():
     t_top10 = conn.table(T_TOP10_MONTH)
     df_top10 = fetch_top10_for_month(t_top10, top10_year, top10_month)
 
+    df_weather = pd.DataFrame()
+    try:
+        t_weather = conn.table(T_WEATHER)
+        df_weather = fetch_weather_heatmap(t_weather, region, year, month_from, month_to)
+    except Exception as e:
+        print(f"[WARN] Weather chart skipped: {e}")
+
+
     conn.close()
 
     # --- One window with all charts ---
@@ -354,6 +440,8 @@ def main():
         month_to=month_to,
         top10_year=top10_year,
         top10_month=top10_month,
+        df_weather=df_weather,
+        region=region,
     )
 
     print("Done.")
