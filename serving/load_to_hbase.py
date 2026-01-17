@@ -46,28 +46,43 @@ def ensure_table(connection, table_name):
         print(f"[INFO] HBase table exists: {table_name}")
 
 
-def write_df_to_hbase(df, table, rowkey_col, mappings, batch_size=5000):
+def write_df_to_hbase(df, table_name, rowkey_col, mappings, batch_size=5000):
     """
     Write a Spark DataFrame to HBase using HappyBase batch.
     mappings: list of (df_column, hbase_qualifier)
+    
+    Note: Creates HBase connection inside each partition to avoid serialization issues.
     """
-
+    
+    # Broadcast configuration to executors
+    hbase_host = HBASE_HOST
+    hbase_port = HBASE_PORT
+    col_family = COLUMN_FAMILY
+    
     def write_partition(rows):
-        with table.batch(batch_size=batch_size) as b:
-            for r in rows:
-                rk = r[rowkey_col]
-                if rk is None:
-                    continue
-
-                data = {}
-                for c, q in mappings:
-                    val = r[c]
-                    if val is None:
+        # Create HBase connection inside the partition (on executor)
+        conn = happybase.Connection(hbase_host, hbase_port)
+        conn.open()
+        table = conn.table(table_name)
+        
+        try:
+            with table.batch(batch_size=batch_size) as b:
+                for r in rows:
+                    rk = r[rowkey_col]
+                    if rk is None:
                         continue
-                    data[f"{COLUMN_FAMILY}:{q}".encode("utf-8")] = str(val).encode("utf-8")
 
-                if data:
-                    b.put(rk.encode("utf-8"), data)
+                    data = {}
+                    for c, q in mappings:
+                        val = r[c]
+                        if val is None:
+                            continue
+                        data[f"{col_family}:{q}".encode("utf-8")] = str(val).encode("utf-8")
+
+                    if data:
+                        b.put(rk.encode("utf-8"), data)
+        finally:
+            conn.close()
 
     df.select([rowkey_col] + [c for c, _ in mappings]).rdd.foreachPartition(write_partition)
 
@@ -102,7 +117,6 @@ def main():
         raise RuntimeError(f"Missing Hive staging table: {hive_tbl} (run build_batch_views.py first)")
 
     ensure_table(conn, HBASE_TABLES[tname])
-    table = conn.table(HBASE_TABLES[tname])
 
     df = (
         spark.table(hive_tbl)
@@ -117,7 +131,7 @@ def main():
     )
 
     write_df_to_hbase(
-        df, table, "rowkey",
+        df, HBASE_TABLES[tname], "rowkey",
         [
             ("avg_dep_delay", "avg_dep_delay"),
             ("avg_arr_delay", "avg_arr_delay"),
@@ -132,7 +146,6 @@ def main():
     tname = "cancel_airport_month"
     hive_tbl = f"{SERVING_DB}.{tname}"
     ensure_table(conn, HBASE_TABLES[tname])
-    table = conn.table(HBASE_TABLES[tname])
 
     df = (
         spark.table(hive_tbl)
@@ -147,7 +160,7 @@ def main():
     )
 
     write_df_to_hbase(
-        df, table, "rowkey",
+        df, HBASE_TABLES[tname], "rowkey",
         [
             ("cancel_pct", "cancel_pct"),
             ("cancel_cnt", "cancel_cnt"),
@@ -157,12 +170,11 @@ def main():
     print("[OK] Loaded cancel_airport_month.")
 
     # --------------------------------------------------
-    # 5) delay_carrier_month
+    # 3) delay_carrier_month
     # --------------------------------------------------
     tname = "delay_carrier_month"
     hive_tbl = f"{SERVING_DB}.{tname}"
     ensure_table(conn, HBASE_TABLES[tname])
-    table = conn.table(HBASE_TABLES[tname])
 
     df = (
         spark.table(hive_tbl)
@@ -177,7 +189,7 @@ def main():
     )
 
     write_df_to_hbase(
-        df, table, "rowkey",
+        df, HBASE_TABLES[tname], "rowkey",
         [
             ("avg_dep_delay", "avg_dep_delay"),
             ("avg_arr_delay", "avg_arr_delay"),
@@ -187,12 +199,11 @@ def main():
     print("[OK] Loaded delay_carrier_month.")
 
     # --------------------------------------------------
-    # 3) top10_airports_delay_month
+    # 4) top10_airports_delay_month
     # --------------------------------------------------
     tname = "top10_airports_delay_month"
     hive_tbl = f"{SERVING_DB}.{tname}"
     ensure_table(conn, HBASE_TABLES[tname])
-    table = conn.table(HBASE_TABLES[tname])
 
     df = (
         spark.table(hive_tbl)
@@ -203,17 +214,16 @@ def main():
     rank_cols = [c for c in df.columns if c.startswith("rank")]
     mappings = [(c, c) for c in rank_cols]
 
-    write_df_to_hbase(df, table, "rowkey", mappings)
+    write_df_to_hbase(df, HBASE_TABLES[tname], "rowkey", mappings)
     print("[OK] Loaded top10_airports_delay_month.")
 
     # --------------------------------------------------
-    # 4) delay_weather_region_month (optional)
+    # 5) delay_weather_region_month (optional)
     # --------------------------------------------------
     tname = "delay_weather_region_month"
     hive_tbl = f"{SERVING_DB}.{tname}"
     if hive_table_exists(spark, SERVING_DB, tname):
         ensure_table(conn, HBASE_TABLES[tname])
-        table = conn.table(HBASE_TABLES[tname])
 
         df = (
             spark.table(hive_tbl)
@@ -229,7 +239,7 @@ def main():
         )
 
         write_df_to_hbase(
-            df, table, "rowkey",
+            df, HBASE_TABLES[tname], "rowkey",
             [
                 ("avg_dep_delay", "avg_dep_delay"),
                 ("avg_arr_delay", "avg_arr_delay"),
@@ -247,7 +257,6 @@ def main():
     hive_tbl = f"{SERVING_DB}.{tname}"
     if hive_table_exists(spark, SERVING_DB, tname):
         ensure_table(conn, HBASE_TABLES[tname])
-        table = conn.table(HBASE_TABLES[tname])
 
         df = (
             spark.table(hive_tbl)
@@ -267,7 +276,7 @@ def main():
             ("flights_cnt", "flights_cnt"),
         ]
 
-        write_df_to_hbase(df, table, "rowkey", mappings)
+        write_df_to_hbase(df, HBASE_TABLES[tname], "rowkey", mappings)
         print("[OK] Loaded cancel_weather_region_month.")
     else:
         print("[WARN] serving.cancel_weather_region_month not found – skipping cancel-weather load.")
@@ -279,7 +288,6 @@ def main():
     hive_tbl = f"{SERVING_DB}.{tname}"
     if hive_table_exists(spark, SERVING_DB, tname):
         ensure_table(conn, HBASE_TABLES[tname])
-        table = conn.table(HBASE_TABLES[tname])
 
         df = (
             spark.table(hive_tbl)
@@ -295,7 +303,7 @@ def main():
         )
 
         write_df_to_hbase(
-            df, table, "rowkey",
+            df, HBASE_TABLES[tname], "rowkey",
             [
                 ("avg_dep_delay", "avg_dep_delay"),
                 ("avg_arr_delay", "avg_arr_delay"),
