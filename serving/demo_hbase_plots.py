@@ -1,13 +1,15 @@
 import os
 import happybase
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import argparse
 
-# --- GUI (scrollable window) ---
-import tkinter as tk
-from tkinter import ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# # --- GUI (scrollable window) ---
+# import tkinter as tk
+# from tkinter import ttk
+# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 # ======================================================
@@ -49,12 +51,14 @@ def parse_args():
 
     parser.add_argument("--airport-id", default="12478")
     parser.add_argument("--carrier", default="AA")
-    parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--month-from", type=int, default=1)
-    parser.add_argument("--month-to", type=int, default=12)
+    parser.add_argument("--month-to", type=int, default=1)
     parser.add_argument("--top10-month", type=int, default=1)
     parser.add_argument("--top10-year", type=int, default=2025)
     parser.add_argument("--region", default="California")
+
+    parser.add_argument("--out-dir", default="plots")
 
     return parser.parse_args()
 
@@ -97,6 +101,13 @@ def safe_int(x):
         return int(float(x))
     except:
         return None
+
+def save_fig(fig, out_dir: str, filename: str):
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, filename)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[OK] Saved: {out_path}")
 
 
 # ======================================================
@@ -291,10 +302,10 @@ def fetch_aircraft_age_bucket(table, year: int, top_carriers: int = 5) -> pd.Dat
 
 
 # ======================================================
-# DASHBOARD
+# DASHBOARD / PLOTS
 # ======================================================
 
-def show_dashboard(
+def save_charts(
     df_delay: pd.DataFrame,
     df_cancel: pd.DataFrame,
     df_carrier: pd.DataFrame,
@@ -310,189 +321,341 @@ def show_dashboard(
     df_weather_cancel: pd.DataFrame,
     region: str,
     df_age: pd.DataFrame,
+    out_dir: str,
 ):
-    fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(12, 16))
-    ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8 = axes.flatten()
-
     # 1) Airport delays
+    fig, ax = plt.subplots(figsize=(8, 4))
     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
-        ax1.plot(df_delay["month"], df_delay["avg_dep_delay"], marker="o")
-        ax1.set_title(f"Avg dep delay (airport {airport_id}, {year})")
-        ax1.set_xlabel("Month")
-        ax1.set_ylabel("Delay [min]")
-        ax1.grid(True)
+        ax.plot(df_delay["month"], df_delay["avg_dep_delay"], marker="o")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Delay [min]")
+        ax.grid(True)
     else:
-        ax1.set_title(f"Avg dep delay (airport {airport_id}, {year})")
-        ax1.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax1.transAxes)
-        ax1.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    ax.set_title(f"Avg dep delay (airport {airport_id}, {year})")
+    save_fig(fig, out_dir, f"01_airport_{airport_id}_{year}_dep_delay.png")
 
     # 2) Airport cancellations
+    fig, ax = plt.subplots(figsize=(8, 4))
     if not df_cancel.empty and "cancel_pct" in df_cancel.columns:
-        df_cancel = df_cancel.copy()
-        df_cancel["cancel_pct"] = df_cancel["cancel_pct"].apply(safe_float)
-
-        ax2.plot(df_cancel["month"], df_cancel["cancel_pct"], marker="o")
-        ax2.set_title(f"Cancel % (airport {airport_id}, {year})")
-        ax2.set_xlabel("Month")
-        ax2.set_ylabel("Cancel %")
-        ax2.grid(True)
+        df_c = df_cancel.copy()
+        df_c["cancel_pct"] = df_c["cancel_pct"].apply(safe_float)
+        ax.plot(df_c["month"], df_c["cancel_pct"], marker="o")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Cancel %")
+        ax.grid(True)
     else:
-        ax2.set_title(f"Cancel % (airport {airport_id}, {year})")
-        ax2.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax2.transAxes)
-        ax2.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    ax.set_title(f"Cancel % (airport {airport_id}, {year})")
+    save_fig(fig, out_dir, f"02_airport_{airport_id}_{year}_cancel_pct.png")
 
     # 3) Carrier delays
+    fig, ax = plt.subplots(figsize=(8, 4))
     if not df_carrier.empty and "avg_dep_delay" in df_carrier.columns:
-        ax3.plot(df_carrier["month"], df_carrier["avg_dep_delay"], marker="o")
-        ax3.set_title(f"Avg dep delay (carrier {carrier}, {year})")
-        ax3.set_xlabel("Month")
-        ax3.set_ylabel("Delay [min]")
-        ax3.grid(True)
+        ax.plot(df_carrier["month"], df_carrier["avg_dep_delay"], marker="o")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Delay [min]")
+        ax.grid(True)
     else:
-        ax3.set_title(f"Avg dep delay (carrier {carrier}, {year})")
-        ax3.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax3.transAxes)
-        ax3.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    ax.set_title(f"Avg dep delay (carrier {carrier}, {year})")
+    save_fig(fig, out_dir, f"03_carrier_{carrier}_{year}_dep_delay.png")
 
     # 4) Top10 airports
+    fig, ax = plt.subplots(figsize=(10, 5))
     if not df_top10.empty and "airport_id" in df_top10.columns and "avg_dep_delay" in df_top10.columns:
-        ax4.bar(df_top10["airport_id"], df_top10["avg_dep_delay"])
-        ax4.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
-        ax4.set_xlabel("AirportID")
-        ax4.set_ylabel("Delay [min]")
-        for label in ax4.get_xticklabels():
+        ax.bar(df_top10["airport_id"], df_top10["avg_dep_delay"])
+        ax.set_xlabel("AirportID")
+        ax.set_ylabel("Delay [min]")
+        for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha("right")
-        ax4.grid(False)
     else:
-        ax4.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
-        ax4.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax4.transAxes)
-        ax4.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    ax.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
+    save_fig(fig, out_dir, f"04_top10_{top10_year}-{top10_month:02d}_dep_delay.png")
 
-    # 5) Weather vs delay (heatmap: month x EventType)
-    # Expect df_weather columns: month, EventType, avg_dep_delay
+    # 5) Weather vs delay heatmap
+    fig, ax = plt.subplots(figsize=(10, 5))
     if df_weather_delay is not None and not df_weather_delay.empty:
         pivot = df_weather_delay.pivot_table(
-            index="month",
-            columns="EventType",
-            values="avg_dep_delay",
-            aggfunc="mean"
+            index="month", columns="EventType", values="avg_dep_delay", aggfunc="mean"
         )
-
-        im = ax5.imshow(pivot.values, aspect="auto")  # default colormap
-        ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
-        ax5.set_xlabel("EventType")
-        ax5.set_ylabel("Month")
-
-        ax5.set_yticks(range(len(pivot.index)))
-        ax5.set_yticklabels(pivot.index.tolist())
-
-        ax5.set_xticks(range(len(pivot.columns)))
-        ax5.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
-
-        fig.colorbar(im, ax=ax5, fraction=0.046, pad=0.04, label="Delay [min]")
+        im = ax.imshow(pivot.values, aspect="auto")
+        ax.set_title(f"Avg dep delay vs weather ({region}, {year})")
+        ax.set_xlabel("EventType")
+        ax.set_ylabel("Month")
+        ax.set_yticks(range(len(pivot.index)))
+        ax.set_yticklabels(pivot.index.tolist())
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Delay [min]")
     else:
-        ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
-        ax5.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax5.transAxes)
-        ax5.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        ax.set_title(f"Avg dep delay vs weather ({region}, {year})")
+    save_fig(fig, out_dir, f"05_weather_{region}_{year}_delay_heatmap.png")
 
-    # 6) Weather vs cancel rate (heatmap: month x EventType)
-    # Expect df_weather_cancel columns: month, EventType, cancel_rate
+    # 6) Weather vs cancel rate heatmap
+    fig, ax = plt.subplots(figsize=(10, 5))
     if df_weather_cancel is not None and not df_weather_cancel.empty:
         pivot = df_weather_cancel.pivot_table(
-            index="month",
-            columns="EventType",
-            values="cancel_rate",
-            aggfunc="mean"
+            index="month", columns="EventType", values="cancel_rate", aggfunc="mean"
         )
-
-        im = ax6.imshow(pivot.values, aspect="auto")  # default colormap
-        ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
-        ax6.set_xlabel("EventType")
-        ax6.set_ylabel("Month")
-
-        ax6.set_yticks(range(len(pivot.index)))
-        ax6.set_yticklabels(pivot.index.tolist())
-
-        ax6.set_xticks(range(len(pivot.columns)))
-        ax6.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
-
-        fig.colorbar(im, ax=ax6, fraction=0.046, pad=0.04, label="Cancel rate")
+        im = ax.imshow(pivot.values, aspect="auto")
+        ax.set_title(f"Cancel rate vs weather ({region}, {year})")
+        ax.set_xlabel("EventType")
+        ax.set_ylabel("Month")
+        ax.set_yticks(range(len(pivot.index)))
+        ax.set_yticklabels(pivot.index.tolist())
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Cancel rate")
     else:
-        ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
-        ax6.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax6.transAxes)
-        ax6.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        ax.set_title(f"Cancel rate vs weather ({region}, {year})")
+    save_fig(fig, out_dir, f"06_weather_{region}_{year}_cancel_heatmap.png")
 
-    # 7) Aircraft age bucket vs avg dep delay (grouped bar)
-    ax7.set_title(f"Aircraft age bucket vs avg dep delay ({year})")
+    # 7) Aircraft age bucket vs avg dep delay
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.set_title(f"Aircraft age bucket vs avg dep delay ({year})")
     if df_age is not None and not df_age.empty:
         pivot = df_age.pivot_table(
-            index="aircraft_age_bucket",
-            columns="carrier",
-            values="avg_dep_delay",
-            aggfunc="mean"
+            index="aircraft_age_bucket", columns="carrier", values="avg_dep_delay", aggfunc="mean"
         )
-
-        pivot.plot(kind="bar", ax=ax7)
-        ax7.set_xlabel("Aircraft age bucket [years]")
-        ax7.set_ylabel("Avg dep delay [min]")
-        for label in ax7.get_xticklabels():
+        pivot.plot(kind="bar", ax=ax)
+        ax.set_xlabel("Aircraft age bucket [years]")
+        ax.set_ylabel("Avg dep delay [min]")
+        for label in ax.get_xticklabels():
             label.set_rotation(0)
-        ax7.grid(True, axis="y")
-        ax7.legend(title="Carrier", fontsize=8)
+        ax.grid(True, axis="y")
+        ax.legend(title="Carrier", fontsize=8)
     else:
-        ax7.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax7.transAxes)
-        ax7.set_axis_off()
-
-    # 8) empty plot
-    ax8.set_axis_off()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    save_fig(fig, out_dir, f"07_aircraft_age_{year}_dep_delay.png")
 
 
-    fig.suptitle(
-        f"HBase Serving Demo | airport={airport_id} carrier={carrier} "
-        f"range={year}-{month_from:02d}..{month_to:02d} | top10={top10_year}-{top10_month:02d}",
-        fontsize=12
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-
-    root = tk.Tk()
-    root.title("HBase Serving Layer Demo - Dashboard")
-
-    container = ttk.Frame(root)
-    container.pack(fill="both", expand=True)
-
-    canvas = tk.Canvas(container)
-    vscroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=vscroll.set)
-
-    vscroll.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-
-    inner = ttk.Frame(canvas)
-    inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
-
-    mpl_canvas = FigureCanvasTkAgg(fig, master=inner)
-    mpl_widget = mpl_canvas.get_tk_widget()
-    mpl_widget.pack(fill="both", expand=True)
-
-    mpl_canvas.draw()
-
-    def _on_configure(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-
-    inner.bind("<Configure>", _on_configure)
-
-    def _on_canvas_configure(event):
-        canvas.itemconfig(inner_id, width=event.width)
-
-    canvas.bind("<Configure>", _on_canvas_configure)
-
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-    root.minsize(900, 600)
-    root.mainloop()
+# def show_dashboard(
+#     df_delay: pd.DataFrame,
+#     df_cancel: pd.DataFrame,
+#     df_carrier: pd.DataFrame,
+#     df_top10: pd.DataFrame,
+#     airport_id: str,
+#     carrier: str,
+#     year: int,
+#     month_from: int,
+#     month_to: int,
+#     top10_year: int,
+#     top10_month: int,
+#     df_weather_delay: pd.DataFrame,
+#     df_weather_cancel: pd.DataFrame,
+#     region: str,
+#     df_age: pd.DataFrame,
+# ):
+#     fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(12, 16))
+#     ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8 = axes.flatten()
+#
+#     # 1) Airport delays
+#     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
+#         ax1.plot(df_delay["month"], df_delay["avg_dep_delay"], marker="o")
+#         ax1.set_title(f"Avg dep delay (airport {airport_id}, {year})")
+#         ax1.set_xlabel("Month")
+#         ax1.set_ylabel("Delay [min]")
+#         ax1.grid(True)
+#     else:
+#         ax1.set_title(f"Avg dep delay (airport {airport_id}, {year})")
+#         ax1.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax1.transAxes)
+#         ax1.set_axis_off()
+#
+#     # 2) Airport cancellations
+#     if not df_cancel.empty and "cancel_pct" in df_cancel.columns:
+#         df_cancel = df_cancel.copy()
+#         df_cancel["cancel_pct"] = df_cancel["cancel_pct"].apply(safe_float)
+#
+#         ax2.plot(df_cancel["month"], df_cancel["cancel_pct"], marker="o")
+#         ax2.set_title(f"Cancel % (airport {airport_id}, {year})")
+#         ax2.set_xlabel("Month")
+#         ax2.set_ylabel("Cancel %")
+#         ax2.grid(True)
+#     else:
+#         ax2.set_title(f"Cancel % (airport {airport_id}, {year})")
+#         ax2.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax2.transAxes)
+#         ax2.set_axis_off()
+#
+#     # 3) Carrier delays
+#     if not df_carrier.empty and "avg_dep_delay" in df_carrier.columns:
+#         ax3.plot(df_carrier["month"], df_carrier["avg_dep_delay"], marker="o")
+#         ax3.set_title(f"Avg dep delay (carrier {carrier}, {year})")
+#         ax3.set_xlabel("Month")
+#         ax3.set_ylabel("Delay [min]")
+#         ax3.grid(True)
+#     else:
+#         ax3.set_title(f"Avg dep delay (carrier {carrier}, {year})")
+#         ax3.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax3.transAxes)
+#         ax3.set_axis_off()
+#
+#     # 4) Top10 airports
+#     if not df_top10.empty and "airport_id" in df_top10.columns and "avg_dep_delay" in df_top10.columns:
+#         ax4.bar(df_top10["airport_id"], df_top10["avg_dep_delay"])
+#         ax4.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
+#         ax4.set_xlabel("AirportID")
+#         ax4.set_ylabel("Delay [min]")
+#         for label in ax4.get_xticklabels():
+#             label.set_rotation(45)
+#             label.set_ha("right")
+#         ax4.grid(False)
+#     else:
+#         ax4.set_title(f"Top10 airports avg dep delay ({top10_year}-{top10_month:02d})")
+#         ax4.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax4.transAxes)
+#         ax4.set_axis_off()
+#
+#     # 5) Weather vs delay (heatmap: month x EventType)
+#     # Expect df_weather columns: month, EventType, avg_dep_delay
+#     if df_weather_delay is not None and not df_weather_delay.empty:
+#         pivot = df_weather_delay.pivot_table(
+#             index="month",
+#             columns="EventType",
+#             values="avg_dep_delay",
+#             aggfunc="mean"
+#         )
+#
+#         im = ax5.imshow(pivot.values, aspect="auto")  # default colormap
+#         ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
+#         ax5.set_xlabel("EventType")
+#         ax5.set_ylabel("Month")
+#
+#         ax5.set_yticks(range(len(pivot.index)))
+#         ax5.set_yticklabels(pivot.index.tolist())
+#
+#         ax5.set_xticks(range(len(pivot.columns)))
+#         ax5.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+#
+#         fig.colorbar(im, ax=ax5, fraction=0.046, pad=0.04, label="Delay [min]")
+#     else:
+#         ax5.set_title(f"Avg dep delay vs weather ({region}, {year})")
+#         ax5.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax5.transAxes)
+#         ax5.set_axis_off()
+#
+#     # 6) Weather vs cancel rate (heatmap: month x EventType)
+#     # Expect df_weather_cancel columns: month, EventType, cancel_rate
+#     if df_weather_cancel is not None and not df_weather_cancel.empty:
+#         pivot = df_weather_cancel.pivot_table(
+#             index="month",
+#             columns="EventType",
+#             values="cancel_rate",
+#             aggfunc="mean"
+#         )
+#
+#         im = ax6.imshow(pivot.values, aspect="auto")  # default colormap
+#         ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
+#         ax6.set_xlabel("EventType")
+#         ax6.set_ylabel("Month")
+#
+#         ax6.set_yticks(range(len(pivot.index)))
+#         ax6.set_yticklabels(pivot.index.tolist())
+#
+#         ax6.set_xticks(range(len(pivot.columns)))
+#         ax6.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+#
+#         fig.colorbar(im, ax=ax6, fraction=0.046, pad=0.04, label="Cancel rate")
+#     else:
+#         ax6.set_title(f"Cancel rate vs weather ({region}, {year})")
+#         ax6.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax6.transAxes)
+#         ax6.set_axis_off()
+#
+#     # 7) Aircraft age bucket vs avg dep delay (grouped bar)
+#     ax7.set_title(f"Aircraft age bucket vs avg dep delay ({year})")
+#     if df_age is not None and not df_age.empty:
+#         pivot = df_age.pivot_table(
+#             index="aircraft_age_bucket",
+#             columns="carrier",
+#             values="avg_dep_delay",
+#             aggfunc="mean"
+#         )
+#
+#         pivot.plot(kind="bar", ax=ax7)
+#         ax7.set_xlabel("Aircraft age bucket [years]")
+#         ax7.set_ylabel("Avg dep delay [min]")
+#         for label in ax7.get_xticklabels():
+#             label.set_rotation(0)
+#         ax7.grid(True, axis="y")
+#         ax7.legend(title="Carrier", fontsize=8)
+#     else:
+#         ax7.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax7.transAxes)
+#         ax7.set_axis_off()
+#
+#     # 8) empty plot
+#     ax8.set_axis_off()
+#
+#
+#     fig.suptitle(
+#         f"HBase Serving Demo | airport={airport_id} carrier={carrier} "
+#         f"range={year}-{month_from:02d}..{month_to:02d} | top10={top10_year}-{top10_month:02d}",
+#         fontsize=12
+#     )
+#     fig.tight_layout(rect=[0, 0, 1, 0.95])
+#
+#     out_dir = "plots"
+#     os.makedirs(out_dir, exist_ok=True)
+#
+#     fname = (
+#         f"dashboard_airport_{airport_id}_carrier_{carrier}_"
+#         f"{year}_{month_from:02d}-{month_to:02d}_"
+#         f"top10_{top10_year}-{top10_month:02d}.png"
+#     )
+#
+#     out_path = os.path.join(out_dir, fname)
+#
+#     fig.savefig(out_path, dpi=150, bbox_inches="tight")
+#     plt.close(fig)
+#
+#     print(f"[OK] Saved dashboard to {out_path}")
+#
+#     # root = tk.Tk()
+#     # root.title("HBase Serving Layer Demo - Dashboard")
+#     #
+#     # container = ttk.Frame(root)
+#     # container.pack(fill="both", expand=True)
+#     #
+#     # canvas = tk.Canvas(container)
+#     # vscroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+#     # canvas.configure(yscrollcommand=vscroll.set)
+#     #
+#     # vscroll.pack(side="right", fill="y")
+#     # canvas.pack(side="left", fill="both", expand=True)
+#     #
+#     # inner = ttk.Frame(canvas)
+#     # inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+#     #
+#     # mpl_canvas = FigureCanvasTkAgg(fig, master=inner)
+#     # mpl_widget = mpl_canvas.get_tk_widget()
+#     # mpl_widget.pack(fill="both", expand=True)
+#     #
+#     # mpl_canvas.draw()
+#     #
+#     # def _on_configure(event):
+#     #     canvas.configure(scrollregion=canvas.bbox("all"))
+#     #
+#     # inner.bind("<Configure>", _on_configure)
+#     #
+#     # def _on_canvas_configure(event):
+#     #     canvas.itemconfig(inner_id, width=event.width)
+#     #
+#     # canvas.bind("<Configure>", _on_canvas_configure)
+#     #
+#     # def _on_mousewheel(event):
+#     #     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+#     #
+#     # canvas.bind_all("<MouseWheel>", _on_mousewheel)
+#     #
+#     # root.minsize(900, 600)
+#     # root.mainloop()
 
 
 # ======================================================
@@ -501,6 +664,7 @@ def show_dashboard(
 
 def main():
     args = parse_args()
+    out_dir = args.out_dir
 
     region = args.region
     airport_id = args.airport_id
@@ -558,8 +722,7 @@ def main():
 
     conn.close()
 
-    # --- One window with all charts ---
-    show_dashboard(
+    save_charts(
         df_delay=df_delay,
         df_cancel=df_cancel,
         df_carrier=df_carrier,
@@ -575,7 +738,27 @@ def main():
         df_weather_cancel=df_weather_cancel,
         region=region,
         df_age=df_age,
+        out_dir=out_dir,
     )
+
+    # # --- One window with all charts ---
+    # show_dashboard(
+    #     df_delay=df_delay,
+    #     df_cancel=df_cancel,
+    #     df_carrier=df_carrier,
+    #     df_top10=df_top10,
+    #     airport_id=airport_id,
+    #     carrier=carrier,
+    #     year=year,
+    #     month_from=month_from,
+    #     month_to=month_to,
+    #     top10_year=top10_year,
+    #     top10_month=top10_month,
+    #     df_weather_delay=df_weather_delay,
+    #     df_weather_cancel=df_weather_cancel,
+    #     region=region,
+    #     df_age=df_age,
+    # )
 
     print("Done.")
 

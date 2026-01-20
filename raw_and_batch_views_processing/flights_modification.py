@@ -282,8 +282,8 @@ def initialize_silver_table():
     spark.sql(f"""
         CREATE EXTERNAL TABLE IF NOT EXISTS silver.flight_facts (
             FactID BIGINT,
-            DepartureAirportID STRING,
-            ArrivalAirportID STRING,
+            DepartureAirportID INT,
+            ArrivalAirportID INT,
             CarrierCode STRING,
             IsCancelledFlag BOOLEAN,
             CancellationReasonName STRING,
