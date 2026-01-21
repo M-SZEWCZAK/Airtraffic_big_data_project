@@ -366,37 +366,51 @@ def main():
     # 1) Avg delay per airport-month
     v1 = build_delay_airport_month(flights)
     save_hive_table(v1, f"{SERVING_DB}.delay_airport_month")
+    print("\n[BATCH VIEW] serving.delay_airport_month")
+    v1.show(20, truncate=False)
 
     # 2) Cancel % per airport-month
     v2 = build_cancel_airport_month(flights)
     save_hive_table(v2, f"{SERVING_DB}.cancel_airport_month")
+    print("\n[BATCH VIEW] serving.cancel_airport_month")
+    v2.show(20, truncate=False)
 
     # 3) Top10 airports by delay per month
     v3 = build_top10_airports_month(v1)
     save_hive_table(v3, f"{SERVING_DB}.top10_airports_delay_month")
+    print("\n[BATCH VIEW] serving.top10_airports_delay_month")
+    v3.show(10, truncate=False)
 
     # 4) Delay vs weather event type per region/month (optional)
     v4 = build_delay_weather_region_month(spark, flights, airports)
     if v4 is not None:
         save_hive_table(v4, f"{SERVING_DB}.delay_weather_region_month")
+        print("\n[BATCH VIEW] serving.delay_weather_region_month")
+        v4.show(20, truncate=False)
     else:
         print("[INFO] Weather view not created (no compatible weather table).")
 
     # 5) Avg delay per carrier-month
     v5 = build_delay_carrier_month(flights)
     save_hive_table(v5, f"{SERVING_DB}.delay_carrier_month")
+    print("\n[BATCH VIEW] serving.delay_carrier_month")
+    v5.show(20, truncate=False)
 
     # 6) Cancel rate vs weather event type per region/month (optional)
     v6 = build_cancel_weather_region_month(spark, flights, airports)
     if v6 is not None:
         save_hive_table(v6, f"{SERVING_DB}.cancel_weather_region_month")
+        print("\n[BATCH VIEW] serving.cancel_weather_region_month")
+        v6.show(20, truncate=False)
     else:
         print("[INFO] Cancel-weather view not created (no compatible weather table).")
 
     # 7) Aircraft age bucket vs delays (optional)
-    v6 = build_aircraft_age_bucket_carrier_year(spark, flights)
-    if v6 is not None:
-        save_hive_table(v6, f"{SERVING_DB}.aircraft_age_bucket_carrier_year")
+    v7 = build_aircraft_age_bucket_carrier_year(spark, flights)
+    if v7 is not None:
+        save_hive_table(v7, f"{SERVING_DB}.aircraft_age_bucket_carrier_year")
+        print("\n[BATCH VIEW] serving.aircraft_age_bucket_carrier_year")
+        v7.show(20, truncate=False)
     else:
         print("[INFO] Aircraft-age view not created (no aircraft table).")
 
