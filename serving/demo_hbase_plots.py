@@ -5,6 +5,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import argparse
+from pathlib import Path
+
 
 # # --- GUI (scrollable window) ---
 # import tkinter as tk
@@ -40,6 +42,30 @@ T_AIRCRAFT_AGE = "serving:aircraft_age_bucket_carrier_year"
 # # demo Top10 for a specific month
 # TOP10_YEAR = 2024
 # TOP10_MONTH = 1
+
+
+_AIRPORT_LOOKUP = None
+
+def load_airport_lookup(csv_path=None):
+    """
+    Zwraca dict: {AIRPORT_ID (int) -> AIRPORT (str)} wczytany z L_AIRPORT_ID.csv.
+    """
+    global _AIRPORT_LOOKUP
+    if _AIRPORT_LOOKUP is not None:
+        return _AIRPORT_LOOKUP
+
+    if csv_path is None:
+        csv_path = Path(__file__).resolve().parent / "L_AIRPORT_ID.csv"
+    else:
+        csv_path = Path(csv_path)
+
+    df = pd.read_csv(csv_path)
+
+    df["AIRPORT_ID"] = df["AIRPORT_ID"].astype(int)
+    df["AIRPORT"] = df["AIRPORT"].astype(str)
+
+    _AIRPORT_LOOKUP = dict(zip(df["AIRPORT_ID"], df["AIRPORT"]))
+    return _AIRPORT_LOOKUP
 
 
 # ======================================================
@@ -323,10 +349,16 @@ def save_charts(
     df_age: pd.DataFrame,
     out_dir: str,
 ):
+    lookup = load_airport_lookup()
+    airport_code = lookup.get(int(airport_id), airport_id)
+
     # 1) Airport delays
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
-        ax.plot(df_delay["month"], df_delay["avg_dep_delay"], marker="o")
+        months = sorted(df_delay["month"].unique())
+        ax.plot(months, df_delay["avg_dep_delay"], marker="o")
+        ax.set_xticks(months)
+        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Delay [min]")
         ax.grid(True)
@@ -334,14 +366,17 @@ def save_charts(
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
     ax.set_title(f"Avg dep delay (airport {airport_id}, {year})")
-    save_fig(fig, out_dir, f"01_airport_{airport_id}_{year}_dep_delay.png")
+    save_fig(fig, out_dir, f"01_airport_{airport_code}_{year}_dep_delay.png")
 
     # 2) Airport cancellations
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_cancel.empty and "cancel_pct" in df_cancel.columns:
         df_c = df_cancel.copy()
         df_c["cancel_pct"] = df_c["cancel_pct"].apply(safe_float)
-        ax.plot(df_c["month"], df_c["cancel_pct"], marker="o")
+        months = sorted(df_c["month"].unique())
+        ax.plot(months, df_c["cancel_pct"], marker="o")
+        ax.set_xticks(months)
+        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Cancel %")
         ax.grid(True)
@@ -349,12 +384,15 @@ def save_charts(
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
     ax.set_title(f"Cancel % (airport {airport_id}, {year})")
-    save_fig(fig, out_dir, f"02_airport_{airport_id}_{year}_cancel_pct.png")
+    save_fig(fig, out_dir, f"02_airport_{airport_code}_{year}_cancel_pct.png")
 
     # 3) Carrier delays
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_carrier.empty and "avg_dep_delay" in df_carrier.columns:
-        ax.plot(df_carrier["month"], df_carrier["avg_dep_delay"], marker="o")
+        months = sorted(df_carrier["month"].unique())
+        ax.plot(months, df_carrier["avg_dep_delay"], marker="o")
+        ax.set_xticks(months)
+        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Delay [min]")
         ax.grid(True)
@@ -367,8 +405,15 @@ def save_charts(
     # 4) Top10 airports
     fig, ax = plt.subplots(figsize=(10, 5))
     if not df_top10.empty and "airport_id" in df_top10.columns and "avg_dep_delay" in df_top10.columns:
-        ax.bar(df_top10["airport_id"], df_top10["avg_dep_delay"])
-        ax.set_xlabel("AirportID")
+        lookup = load_airport_lookup()
+
+        df_top10["airport_id"] = df_top10["airport_id"].astype(int)
+        df_top10["AirportCode"] = df_top10["airport_id"].map(lookup)
+        df_top10["AirportCode"] = df_top10["AirportCode"].fillna(df_top10["airport_id"].astype(str))
+
+        ax.bar(df_top10["AirportCode"], df_top10["avg_dep_delay"])
+
+        ax.set_xlabel("Airport")
         ax.set_ylabel("Delay [min]")
         for label in ax.get_xticklabels():
             label.set_rotation(45)
