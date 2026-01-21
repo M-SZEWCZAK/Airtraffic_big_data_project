@@ -30,12 +30,12 @@ The objective of the project is to design and implement an aviation data analyti
    - Update frequency: daily
    - Approximate number of records: 309,000
 
----
 
 ### Weather Data
 
-Data related to extreme weather events are provided by **NCEI (National Centers for Environmental Information)**. The dataset includes information about the type of weather event, its classification category, severity, start and end time, and location of occurrence. Some weather phenomena, such as tornadoes or hurricanes, may span large geographic areas and distances. The dataset also includes information on fatalities, injuries, and estimated property damage.
+4. **Storm Events**
+   Data related to extreme weather events are provided by **NCEI (National Centers for Environmental Information)**. The dataset includes information about the type of weather event, its classification category, severity, start and end time, and location of occurrence. Some weather phenomena, such as tornadoes or hurricanes, may span large geographic areas and distances. The dataset also includes information on fatalities, injuries, and estimated property damage.
 
-- Data format: `.csv`
-- Update frequency: annual (data available since 1950)
-- Approximate number of records per year: 63,000
+   - Data format: `.csv`
+   - Update frequency: annual (data available since 1950)
+   - Approximate number of records per year: 63,000
