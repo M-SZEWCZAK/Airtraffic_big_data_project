@@ -336,7 +336,9 @@ def load_airport_data():
             if len(parts) >= 8:
                 file_path = parts[-1]
                 print(f"Loading airports from: {file_path}")
-                return spark.read.parquet(file_path)
+                df = spark.read.parquet(file_path)
+                df = df.withColumn("AIRPORT_ID", col("AIRPORT_ID").cast("int"))
+                return df
 
     raise FileNotFoundError("No airport parquet file found in bronze layer")
 
@@ -464,7 +466,7 @@ def initialize_silver_table():
             END_DATETIME TIMESTAMP,
             HOUR_OFFSET INT,
             INTERPOLATION_FACTOR DOUBLE,
-            AIRPORT_ID STRING,
+            AIRPORT_ID INT,
             DISPLAY_AIRPORT_NAME STRING,
             AIRPORT_COUNTRY_NAME STRING,
             AIRPORT_LATITUDE DOUBLE,

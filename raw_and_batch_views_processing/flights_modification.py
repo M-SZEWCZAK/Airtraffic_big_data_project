@@ -22,10 +22,9 @@ def transform_flight_data(df):
     Transform bronze layer flight data to silver layer format
     """
 
-
-    # Keep original airport IDs (IATA codes)
-    df = df.withColumn("DepartureAirportID", col("ORIGIN_AIRPORT_ID"))
-    df = df.withColumn("ArrivalAirportID", col("DEST_AIRPORT_ID"))
+    # Keep original airport IDs (not IATA codes - original 5-digit IDs)
+    df = df.withColumn("DepartureAirportID", col("ORIGIN_AIRPORT_ID").cast("int"))
+    df = df.withColumn("ArrivalAirportID", col("DEST_AIRPORT_ID").cast("int"))
 
     # Keep original carrier code instead of FK lookup
     df = df.withColumn("CarrierCode", col("OP_CARRIER"))
@@ -112,8 +111,8 @@ def transform_flight_data(df):
     df = df.withColumn("FactID", monotonically_increasing_id())
 
     # Add partition columns for Hive
-    df = df.withColumn("year_partition", col("YEAR"))
-    df = df.withColumn("month_partition", col("MONTH"))
+    df = df.withColumn("year_partition", col("YEAR").cast("int"))
+    df = df.withColumn("month_partition", col("MONTH").cast("int"))
 
     # Select final columns in order
     df = df.select(
