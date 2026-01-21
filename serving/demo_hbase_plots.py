@@ -351,14 +351,18 @@ def save_charts(
 ):
     lookup = load_airport_lookup()
     airport_code = lookup.get(int(airport_id), airport_id)
+    months_range = list(range(month_from, month_to + 1))
 
     # 1) Airport delays
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_delay.empty and "avg_dep_delay" in df_delay.columns:
-        months = sorted(df_delay["month"].unique())
-        ax.plot(months, df_delay["avg_dep_delay"], marker="o")
-        ax.set_xticks(months)
-        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
+        df_d = df_delay.copy()
+        df_d["month"] = df_d["month"].astype(int)
+        s = df_d.set_index("month")["avg_dep_delay"].reindex(months_range)
+
+        ax.plot(months_range, s.values, marker="o")
+        ax.set_xticks(months_range)
+        ax.set_xlim(month_from - 0.5, month_to + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Delay [min]")
         ax.grid(True)
@@ -372,11 +376,14 @@ def save_charts(
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_cancel.empty and "cancel_pct" in df_cancel.columns:
         df_c = df_cancel.copy()
+        df_c["month"] = df_c["month"].astype(int)
         df_c["cancel_pct"] = df_c["cancel_pct"].apply(safe_float)
-        months = sorted(df_c["month"].unique())
-        ax.plot(months, df_c["cancel_pct"], marker="o")
-        ax.set_xticks(months)
-        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
+
+        s = df_c.set_index("month")["cancel_pct"].reindex(months_range)
+
+        ax.plot(months_range, s.values, marker="o")
+        ax.set_xticks(months_range)
+        ax.set_xlim(month_from - 0.5, month_to + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Cancel %")
         ax.grid(True)
@@ -389,10 +396,14 @@ def save_charts(
     # 3) Carrier delays
     fig, ax = plt.subplots(figsize=(8, 4))
     if not df_carrier.empty and "avg_dep_delay" in df_carrier.columns:
-        months = sorted(df_carrier["month"].unique())
-        ax.plot(months, df_carrier["avg_dep_delay"], marker="o")
-        ax.set_xticks(months)
-        ax.set_xlim(min(months) - 0.5, max(months) + 0.5)
+        df_cd = df_carrier.copy()
+        df_cd["month"] = df_cd["month"].astype(int)
+
+        s = df_cd.set_index("month")["avg_dep_delay"].reindex(months_range)
+
+        ax.plot(months_range, s.values, marker="o")
+        ax.set_xticks(months_range)
+        ax.set_xlim(month_from - 0.5, month_to + 0.5)
         ax.set_xlabel("Month")
         ax.set_ylabel("Delay [min]")
         ax.grid(True)
@@ -430,6 +441,8 @@ def save_charts(
         pivot = df_weather_delay.pivot_table(
             index="month", columns="EventType", values="avg_dep_delay", aggfunc="mean"
         )
+        pivot = pivot.reindex(months_range)
+
         im = ax.imshow(pivot.values, aspect="auto")
         ax.set_title(f"Avg dep delay vs weather ({region}, {year})")
         ax.set_xlabel("EventType")
@@ -451,6 +464,8 @@ def save_charts(
         pivot = df_weather_cancel.pivot_table(
             index="month", columns="EventType", values="cancel_rate", aggfunc="mean"
         )
+        pivot = pivot.reindex(months_range)
+
         im = ax.imshow(pivot.values, aspect="auto")
         ax.set_title(f"Cancel rate vs weather ({region}, {year})")
         ax.set_xlabel("EventType")
