@@ -1,6 +1,7 @@
 import os
 import happybase
 import pandas as pd
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -82,7 +83,7 @@ def parse_args():
     parser.add_argument("--month-to", type=int, default=1)
     parser.add_argument("--top10-month", type=int, default=1)
     parser.add_argument("--top10-year", type=int, default=2025)
-    parser.add_argument("--region", default="California")
+    parser.add_argument("--region", default="Florida")
 
     parser.add_argument("--out-dir", default="plots")
 
@@ -134,6 +135,32 @@ def save_fig(fig, out_dir: str, filename: str):
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"[OK] Saved: {out_path}")
+
+
+def annotate_heatmap(ax, data, fmt="{:.2f}", na_label=""):
+    """
+    Wypisuje wartości w środku każdego pola heatmapy.
+    data: 2D array (np. pivot.values)
+    """
+    if data is None:
+        return
+
+    arr = np.array(data, dtype=float)
+
+    finite = arr[np.isfinite(arr)]
+    threshold = np.nanmedian(finite) if finite.size else 0.0
+
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            val = arr[i, j]
+            if np.isfinite(val):
+                txt = fmt.format(val)
+                color = "white" if val < threshold else "black"
+            else:
+                txt = na_label
+                color = "black"
+
+            ax.text(j, i, txt, ha="center", va="center", fontsize=8, color=color)
 
 
 # ======================================================
@@ -369,7 +396,7 @@ def save_charts(
     else:
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
-    ax.set_title(f"Avg dep delay (airport {airport_id}, {year})")
+    ax.set_title(f"Avg dep delay (airport {airport_code}, {year})")
     save_fig(fig, out_dir, f"01_airport_{airport_code}_{year}_dep_delay.png")
 
     # 2) Airport cancellations
@@ -390,7 +417,7 @@ def save_charts(
     else:
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
-    ax.set_title(f"Cancel % (airport {airport_id}, {year})")
+    ax.set_title(f"Cancel % (airport {airport_code}, {year})")
     save_fig(fig, out_dir, f"02_airport_{airport_code}_{year}_cancel_pct.png")
 
     # 3) Carrier delays
@@ -439,18 +466,26 @@ def save_charts(
     fig, ax = plt.subplots(figsize=(10, 5))
     if df_weather_delay is not None and not df_weather_delay.empty:
         pivot = df_weather_delay.pivot_table(
-            index="month", columns="EventType", values="avg_dep_delay", aggfunc="mean"
+            index="EventType",
+            columns="month",
+            values="avg_dep_delay",
+            aggfunc="mean"
         )
-        pivot = pivot.reindex(months_range)
+        pivot = pivot.reindex(columns=months_range)
 
         im = ax.imshow(pivot.values, aspect="auto")
+        annotate_heatmap(ax, pivot.values, fmt="{:.2f}")
+
         ax.set_title(f"Avg dep delay vs weather ({region}, {year})")
-        ax.set_xlabel("EventType")
-        ax.set_ylabel("Month")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("EventType")
+
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels(pivot.columns.tolist())
+
         ax.set_yticks(range(len(pivot.index)))
         ax.set_yticklabels(pivot.index.tolist())
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
+
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Delay [min]")
     else:
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
@@ -462,18 +497,25 @@ def save_charts(
     fig, ax = plt.subplots(figsize=(10, 5))
     if df_weather_cancel is not None and not df_weather_cancel.empty:
         pivot = df_weather_cancel.pivot_table(
-            index="month", columns="EventType", values="cancel_rate", aggfunc="mean"
+            index="EventType",
+            columns="month",
+            values="cancel_rate",
+            aggfunc="mean"
         )
-        pivot = pivot.reindex(months_range)
+        pivot = pivot.reindex(columns=months_range)
 
         im = ax.imshow(pivot.values, aspect="auto")
+        annotate_heatmap(ax, pivot.values, fmt="{:.3f}")
+
         ax.set_title(f"Cancel rate vs weather ({region}, {year})")
-        ax.set_xlabel("EventType")
-        ax.set_ylabel("Month")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("EventType")
+
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels(pivot.columns.tolist())
+
         ax.set_yticks(range(len(pivot.index)))
         ax.set_yticklabels(pivot.index.tolist())
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels(pivot.columns.tolist(), rotation=45, ha="right")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Cancel rate")
     else:
         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
